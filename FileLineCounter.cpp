@@ -58,7 +58,7 @@ public:
             return true;
         }
 
-        for (std::list<std::future<void>>::iterator task = m_threadList.begin(); task != m_threadList.end();)
+        for (std::list<std::future<void>>::iterator task = m_threadList.begin(); task != m_threadList.end(); task++)
         {
             if (task->valid() && task->wait_for(std::chrono::milliseconds(0)) == std::future_status::ready)
             {
@@ -81,12 +81,9 @@ public:
 private:
     void addToQueue(const std::filesystem::path& filePath)
     {
-        while (!m_fileQueueMutex.try_lock())
-        {
-            //wait
-        }
+        std::lock_guard lock{ m_fileQueueMutex };
+
         m_fileQueue.push(filePath);
-        m_fileQueueMutex.unlock();
     }
     /**
      * @brief Adds single task for single file to be counted
@@ -94,19 +91,17 @@ private:
     */
     bool addLineCountingTask()
     {
-        while (!m_fileQueueMutex.try_lock())
+        std::filesystem::path filePath{};
         {
-            //wait
-        }
-        if (m_fileQueue.empty())
-        {
-            m_fileQueueMutex.unlock();
-            return false;
-        }
+            std::lock_guard lock{ m_fileQueueMutex };
+            if (m_fileQueue.empty())
+            {
+                return false;
+            }
 
-        const std::filesystem::path filePath = m_fileQueue.front();
-        m_fileQueue.pop();
-        m_fileQueueMutex.unlock();
+            filePath = m_fileQueue.front();
+            m_fileQueue.pop();
+        }
 
         auto func = [](const std::filesystem::path filePath)
         {
@@ -120,8 +115,7 @@ private:
         return true;
     }
     /**
-     * @brief: looks through given directory and adds all found files to queue for counting
-     * If directory is found recursive call for that directory is made
+     * @brief: Recursively looks through given directory and adds all found files to queue for counting
      * @param dir: directory to be searched
     */
     void searchForFilesInDirectory(const std::filesystem::directory_entry& dir)
@@ -130,7 +124,7 @@ private:
         {
             if (entryToProcess.is_directory())
             {
-                searchForFilesInDirectory(entryToProcess);
+                continue;
             }
             else if (entryToProcess.is_regular_file())
             {
@@ -189,5 +183,6 @@ int main(int argc, char** argv)
     }
 
     std::cout <<"TOTAL number of lines in files: " << std::to_string(LineCount) << std::endl;
+
     return 0;
 }
